@@ -4,53 +4,56 @@ from app.config import settings
 
 client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
 
-# Contexto fixo do produto (A "verdade" sobre o que você vende)
+# Contexto rico com URLs e critérios de escolha
 SPONSOR_CONTEXT = """
-PRODUTOs: 
-1 - Postly.
-O QUE É: Plataforma Headless de distribuição de conteúdo (posts para blogs).
-DIFERENCIAL: Headless consegue rodar até em terminal! Estilo conforme a identidade visual do usuário, ferramentas de IA e ferramentas para produção de conteúdo em massa (carrosséis para instagram, post automático, etc).
-PÚBLICO-ALVO: Empreendedores que querem otimizar seus processos de publicação e escritores que querem ter blog, bem como todo o mercado que queira gerar autoridade.
-2 - EliasOlie.
-O QUE É: Desenvolvedor full stack & full cycle, estratégista de SEO, desenvolvedor de sistemas, o melhor desenvolvedor de Serra Talhada e região.
-DIFERENCIAL: Entrega soluções completas, desde o planejamento estratégico de SEO até a implementação técnica e desenvolvimento de sistemas personalizados.
-PÚBLICO-ALVO: Pequenas e médias empresas que buscam soluções digitais completas para crescer online e grandes empresas que querem consultórias e/ou soluções técnicas de alta performace.
+OPÇÃO A: Postly (SaaS / Ferramenta)
+- O QUE É: Headless CMS para blogs, focado em performance, IA e distribuição de conteúdo.
+- QUANDO ESCOLHER: Se o texto fala sobre criar blog, automação, PAA, estratégia de conteúdo, SEO técnico DIY ou ferramentas.
+- URL: https://postly.eliasolie.com.br
+
+OPÇÃO B: EliasOlie (Serviço / Consultoria)
+- O QUE É: Desenvolvedor Full Stack e Estrategista de SEO (O melhor de Serra Talhada).
+- QUANDO ESCOLHER: Se o texto fala sobre contratar site, desenvolvimento de sistemas complexos, consultoria ou "eu faço para você".
+- URL: https://landing.eliasolie.com.br/contact
 """
 
 async def generate_paa_data(text: str) -> dict:
     prompt = f"""
-    Analise o texto fornecido abaixo. Sua missão é dupla: gerar dúvidas de leitores e criar uma recomendação contextual.
+    Analise o texto fornecido abaixo. Sua missão é atuar como um estrategista de SEO e Copywriter.
 
     ---
-    TAREFA 1: PERGUNTAS (SEO Local & UX)
-    Identifique 3 dúvidas principais que um leitor teria.
-    REGRAS PARA PERGUNTAS:
-    1. Responda de forma direta baseada no texto.
-    2. OBRIGATÓRIO: Use nomes de cidades, estados ou locais citados no texto nos títulos das perguntas (Ex: "Como vender em [Cidade]?").
-    3. Identifique dores ocultas e duvidas gerando a resposta mais completa possível.
-    
-    ---
-    TAREFA 2: ANÚNCIO NATIVO (Copywriting)
-    Crie um card de destaque para o produto descrito em 'CONTEXTO DO PATROCINADOR'.
-    REGRAS PARA O ANÚNCIO:
-    1. O texto deve conectar a dor abordada no artigo com a solução do Postly/EliasOlie.
-    2. Título curto e persuasivo (Gancho).
-    3. CTA (Call to Action) convidativo.
-    
-    CONTEXTO DOS PATROCINADORES (ESCOLHA UM PARA O ANÚNCIO):
+    ETAPA 1: SELEÇÃO DO PATROCINADOR
+    Analise o tópico do texto. Qual das duas opções abaixo resolve melhor a dor do leitor?
     {SPONSOR_CONTEXT}
 
     ---
-    FORMATO DE SAÍDA (JSON ÚNICO):
+    ETAPA 2: GERAÇÃO DE PERGUNTAS (SEO Local)
+    Gere 3 dúvidas principais baseadas no texto.
+    
+    REGRAS CRÍTICAS DE LOCALIZAÇÃO:
+    1. Procure no texto o nome da cidade ou região (Ex: "Serra Talhada").
+    2. Se encontrar, USE O NOME REAL no título da pergunta (Ex: "Como criar site em Serra Talhada?").
+    3. SE NÃO ENCONTRAR CIDADE: NÃO use "[Cidade]" ou "[Estado]". Use termos como "na sua região" ou "para sua empresa". 
+    4. PROIBIDO retornar placeholders com colchetes.
+
+    ---
+    ETAPA 3: CRIAÇÃO DO ANÚNCIO (Native Ad)
+    Crie o conteúdo do card para o patrocinador ESCOLHIDO na Etapa 1.
+    1. Título: Curto, impacto alto (System Alert style).
+    2. Texto: Conecte a dor do artigo à solução escolhida.
+    3. Link: Use a URL correta da opção escolhida.
+
+    ---
+    FORMATO DE SAÍDA (JSON VÁLIDO):
     {{
         "questions": [
-            {{"q": "Dúvida local 1?", "a": "Resposta."}},
-            {{"q": "Dúvida 2?", "a": "Resposta."}}
+            {{"q": "Pergunta 1 (com local real se houver)?", "a": "Resposta."}}
         ],
         "ad": {{
             "title": "Título do Card",
-            "text": "Texto conectando o problema do post à solução.",
-            "cta_text": "Texto do Botão"
+            "text": "Copy persuasiva.",
+            "cta_text": "Texto do Botão (Ex: Conhecer o Postly / Falar com Elias)",
+            "url": "A URL correta baseada na escolha"
         }}
     }}
     
@@ -62,7 +65,7 @@ async def generate_paa_data(text: str) -> dict:
         response = await client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "Você é um especialista em SEO Local, UX e Copywriting."},
+                {"role": "system", "content": "Você é um especialista em SEO Local e Marketing de Conteúdo."},
                 {"role": "user", "content": prompt}
             ],
             response_format={"type": "json_object"}
@@ -75,18 +78,15 @@ async def generate_paa_data(text: str) -> dict:
         
         data = json.loads(content)
         
-        # Normalização de resposta para garantir que não quebre
-        result = {
+        # Tratamento de erro caso a IA esqueça a chave URL
+        if data.get("ad") and "url" not in data["ad"]:
+            # Fallback seguro
+            data["ad"]["url"] = "https://landing.eliasolie.com.br/contact"
+
+        return {
             "questions": data.get("questions", []),
             "ad": data.get("ad", None)
         }
-        
-        # Se a IA alucinar e devolver lista direta (fallback do código antigo), tentamos salvar
-        if isinstance(data, list):
-            result["questions"] = data
-            result["ad"] = None
-            
-        return result
 
     except Exception as e:
         print(f"Erro na geração de IA: {e}")
