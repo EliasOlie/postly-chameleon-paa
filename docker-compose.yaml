@@ -1,0 +1,34 @@
+services:
+  web:
+    build: .
+    container_name: postly-paa-api
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - .:/app 
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - REDIS_URL=redis://redis:6379
+      - PYTHONPATH=/app
+    depends_on:
+      - redis
+    networks:
+      - postly-network
+
+  redis:
+    image: redis:alpine
+    container_name: postly-paa-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - postly-network
+
+volumes:
+  redis_data:
+
+networks:
+  postly-network:
+    driver: bridge
